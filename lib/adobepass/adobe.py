@@ -1,5 +1,5 @@
 import os
-import uuid, hmac, hashlib, base64, time
+import uuid, hmac, hashlib, base64, time, urllib
 import xbmc, xbmcgui, xbmcaddon
 import cookielib, requests
 
@@ -135,7 +135,7 @@ class ADOBE:
         url = self.REGGIE_FQDN + pre_auth_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
-        url += '&resource=' + self.resource_id
+        url += '&resource=' + urllib.quote(self.resource_id)
         url += '&format=json'
 
         self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
@@ -154,7 +154,7 @@ class ADOBE:
         url = self.REGGIE_FQDN + auth_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
-        url += '&resource=' + self.resource_id
+        url += '&resource=' + urllib.quote(self.resource_id)
         url += '&format=json'
 
         r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
@@ -211,7 +211,7 @@ class ADOBE:
         url = self.REGGIE_FQDN + token_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
-        url += '&resource=' + self.resource_id
+        url += '&resource=' + urllib.quote(self.resource_id)
         url += '&format=json'
 
         r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
@@ -248,7 +248,7 @@ class ADOBE:
         url = self.SP_FQDN + authn_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
-        url += '&resource=' + self.resource_id
+        url += '&resource=' + urllib.quote(self.resource_id)
         url += '&format=json'
 
         r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
@@ -305,7 +305,7 @@ class ADOBE:
         url = self.SP_FQDN + authz_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
-        url += '&resource=' + self.resource_id
+        url += '&resource=' + urllib.quote(self.resource_id)
         url += '&format=json'
 
         r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
