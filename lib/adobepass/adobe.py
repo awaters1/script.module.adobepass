@@ -12,15 +12,6 @@ class ADOBE:
     device_id = ''
     device_type = ''
     device_user = ''
-    headers = {
-        'Accept': '*/*',
-        'Content-type': 'application/x-www-form-urlencoded',
-        'Accept-Language': 'en-US',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/43.0.2357.81 Safari/537.36',
-        'Connection': 'Keep-Alive',
-        'Pragma': 'no-cache'
-    }
     mvpd_id = ''
     private_key = ''
     public_key = ''
@@ -30,6 +21,18 @@ class ADOBE:
     resource_id = ''
     sso_path = xbmc.translatePath(xbmcaddon.Addon('script.module.adobepass').getAddonInfo('profile'))
     verify = False
+
+    adobe_session = requests.Session()
+    adobe_session.headers.update({
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept-Language': 'en-US',
+        'Connection': 'Keep-Alive',
+        'Pragma': 'no-cache',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/43.0.2357.81 Safari/537.36'
+    })
 
     def __init__(self, service_vars):
         # service_vars is a dictionary type variable (key: value)
@@ -77,14 +80,14 @@ class ADOBE:
 
         return authorization
 
-    def register_device(self):
+    def get_regcode(self):
         """
         <REGGIE_FQDN>/reggie/v1/{requestorId}/regcode
-        Returns randomly generated registration Code and login Page URI
+        Returns randomly generated registration Code
         """
         reggie_url = '/reggie/v1/' + self.requestor_id + '/regcode'
-        #reggie_url = '/reggie/v1/nbcsports/regcode'
-        self.headers['Authorization'] = self.create_authorization('POST', reggie_url)
+        # reggie_url = '/reggie/v1/nbcsports/regcode'
+        headers = {'Authorization': self.create_authorization('POST', reggie_url)}
 
         url = self.REGGIE_FQDN + reggie_url
 
@@ -102,8 +105,17 @@ class ADOBE:
         if self.device_type != '': payload += '&deviceType=' + self.device_type
         if self.mvpd_id != '': payload += '&mvpd=' + self.mvpd_id
 
-        r = requests.post(url, headers=self.headers, cookies=self.load_cookies(), data=payload, verify=self.verify)
+        r = self.adobe_session.post(url, headers=headers,
+                                    cookies=self.load_cookies(), data=payload, verify=self.verify)
         self.reg_code = r.json()['code']
+        return self.reg_code
+
+    def register_device(self):
+        """
+        <REGGIE_FQDN>/reggie/v1/{requestorId}/regcode
+        Returns randomly generated registration Code and login Page URI
+        """
+        self.reg_code = self.get_regcode()
 
         msg = '1. Go to [B][COLOR yellow]' + self.registration_url + '[/COLOR][/B][CR]'
         msg += '2. Select any platform, it does not matter[CR]'
@@ -118,17 +130,17 @@ class ADOBE:
         Retrieves the list of preauthorized resource
         """
         pre_auth_url = '/api/v1/preauthorize'
-        self.headers['Authorization'] = self.create_authorization('GET', pre_auth_url)
+        headers = {'Authorization': self.create_authorization('GET', pre_auth_url)}
 
-        url = self.REGGIE_FQDN + preauth_url
+        url = self.REGGIE_FQDN + pre_auth_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
         url += '&resource=' + self.resource_id
         url += '&format=json'
 
-        requests.get(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
 
-    def authorize(self):
+    def authorize_resp(self):
         """
         <SP_FQDN>/api/v1/authorize
         Obtains authorization response
@@ -137,7 +149,7 @@ class ADOBE:
         403 - No Success
         """
         auth_url = '/api/v1/authorize'
-        self.headers['Authorization'] = self.create_authorization('GET', auth_url)
+        headers = {'Authorization': self.create_authorization('GET', auth_url)}
 
         url = self.REGGIE_FQDN + auth_url
         url += '?deviceId=' + self.device_id
@@ -145,9 +157,12 @@ class ADOBE:
         url += '&resource=' + self.resource_id
         url += '&format=json'
 
-        r = requests.get(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
         self.save_cookies(r.cookies)
+        return r
 
+    def authorize(self):
+        r = self.authorize_resp()
         if r.status_code != 200:
             title = 'Authorization Failed'
             if 'message' in r.json() and 'details' in r.json():
@@ -163,32 +178,35 @@ class ADOBE:
         else:
             return True
 
-    def logout(self):
+    def logout_resp(self):
         """
-        <SP_FQDN>/api/v1/logout
-        Remove AuthN and AuthZ tokens from storage
-        """
+                <SP_FQDN>/api/v1/logout
+                Remove AuthN and AuthZ tokens from storage
+                """
         auth_url = '/api/v1/logout'
-        self.headers['Authorization'] = self.create_authorization('DELETE', auth_url)
+        headers = {'Authorization': self.create_authorization('DELETE', auth_url)}
 
         url = self.REGGIE_FQDN + auth_url
         url += '?deviceId=' + self.device_id
         url += '&requestor=' + self.requestor_id
         url += '&format=json'
 
-        r = requests.delete(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        r = self.adobe_session.delete(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
+        return r
 
+    def logout(self):
+        r = self.logout_resp()
         if r.status_code == 204:
             dialog = xbmcgui.Dialog()
             dialog.notification('Logout', 'You have successfully logged out.', '', 3000, False)
 
-    def media_token(self):
+    def media_token_resp(self):
         """
         <SP_FQDN>/api/v1/mediatoken
         Obtains Short Media Token
         """
         token_url = '/api/v1/mediatoken'
-        self.headers['Authorization'] = self.create_authorization('GET', token_url)
+        headers = {'Authorization': self.create_authorization('GET', token_url)}
 
         url = self.REGGIE_FQDN + token_url
         url += '?deviceId=' + self.device_id
@@ -196,8 +214,12 @@ class ADOBE:
         url += '&resource=' + self.resource_id
         url += '&format=json'
 
-        r = requests.get(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
         self.save_cookies(r.cookies)
+        return r
+
+    def media_token(self):
+        r = self.media_token_resp()
 
         if r.status_code == 200:
             return r.json()['serializedToken']
@@ -211,7 +233,7 @@ class ADOBE:
             dialog.ok('Obtain Media Token Failed', msg)
             return ''
 
-    def get_authn(self):
+    def get_authn_resp(self):
         """
         <SP_FQDN>/api/v1/tokens/authn
         Returns the AuthN token if found
@@ -221,7 +243,7 @@ class ADOBE:
         410 - Expired
         """
         authn_url = '/api/v1/tokens/authn'
-        self.headers['Authorization'] = self.create_authorization('GET', authn_url)
+        headers = {'Authorization': self.create_authorization('GET', authn_url)}
 
         url = self.SP_FQDN + authn_url
         url += '?deviceId=' + self.device_id
@@ -229,13 +251,17 @@ class ADOBE:
         url += '&resource=' + self.resource_id
         url += '&format=json'
 
-        r = requests.get(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
         self.save_cookies(r.cookies)
 
+        return r.json()
+
+    def get_authn(self):
+        json_source = self.get_authn_resp()
         auth_info = ''
-        if 'mvpd' in r.json():
+        if 'mvpd' in json_source:
             auth_info = 'Provider: ' + json_source['mvpd']
-        if 'expires' in r.json():
+        if 'expires' in json_source:
             auth_info += ' expires on ' + json_source['expires']
 
         return auth_info
@@ -249,13 +275,13 @@ class ADOBE:
         403 - No Success
         """
         authn_url = '/api/v1/checkauthn'
-        self.headers['Authorization'] = self.create_authorization('GET', authn_url)
+        headers = {'Authorization': self.create_authorization('GET', authn_url)}
 
         url = self.SP_FQDN + authn_url
         url += '?deviceId=' + self.device_id
         url += '&format=json'
 
-        r = requests.get(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
         self.save_cookies(r.cookies)
 
         if r.status_code == 200:
@@ -274,7 +300,7 @@ class ADOBE:
         410 - AuthZ Expired
         """
         authz_url = '/api/v1/tokens/authz'
-        self.headers['Authorization'] = self.create_authorization('GET', authz_url)
+        headers = {'Authorization': self.create_authorization('GET', authz_url)}
 
         url = self.SP_FQDN + authz_url
         url += '?deviceId=' + self.device_id
@@ -282,7 +308,7 @@ class ADOBE:
         url += '&resource=' + self.resource_id
         url += '&format=json'
 
-        r = requests.get(url, headers=self.headers, cookies=self.load_cookies(), verify=self.verify)
+        r = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
         self.save_cookies(r.cookies)
 
         if r.status_code != 200:
@@ -297,6 +323,19 @@ class ADOBE:
             dialog = xbmcgui.Dialog()
             dialog.ok(title, msg)
             return ''
+
+    # Authenticates the user after they have been authenticated on the activation website (authenticateRegCode)
+    def authenticate(self, regcode):
+
+        authenticate_url = '/api/v1/authenticate/' + regcode
+        headers = {'Authorization': self.create_authorization('GET', authenticate_url)}
+        url = self.SP_FQDN + authenticate_url
+        url += '?deviceId=' + self.device_id
+        url += '&requestor=' + self.requestor_id
+        url += '&format=json'
+
+        resp = self.adobe_session.get(url, headers=headers, cookies=self.load_cookies(), verify=self.verify)
+        return resp.json()
 
     def save_cookies(self, cookiejar):
         cookie_file = os.path.join(self.sso_path, 'cookies.lwp')
